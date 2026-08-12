@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VARDA TV Admin</title><link rel="stylesheet" href="styles.css"></head><body>
+<div id="loginView" class="shell login">
+  <div class="card"><div class="brand"><div class="brandmark">V</div><div><h1>VARDA TV Admin</h1><p>Secure display controller</p></div></div>
+    <div class="notice" style="margin-top:18px">Use the Firebase admin email/password you create during setup.</div>
+    <label>Email</label><input id="email" type="email" autocomplete="username" placeholder="admin@varda...">
+    <label>Password</label><input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div class="actions"><button class="btn" id="loginBtn">Sign in</button></div><div id="loginMsg" class="muted" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<div id="appView" class="hidden">
+  <div class="shell">
+    <div class="topbar"><div class="brand"><div class="brandmark">V</div><div><h1>VARDA TV Display Control</h1><p>Assign one URL to each TV screen</p></div></div><button class="btn secondary" id="logoutBtn">Sign out</button></div>
+    <div class="notice">TV opens only once. After that, changing a URL here updates that TV automatically. Best short format with a custom domain: <span class="code">tv.yourdomain.com/#1</span>.</div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="screen-title">Add / update a screen</div>
+      <div class="row"><div><label>Screen ID</label><input id="screenId" placeholder="1, 2, main, cafe"></div><div><label>Display name</label><input id="screenName" placeholder="Pirates Cafe TV 1"></div></div>
+      <label>Content URL</label><input id="screenUrl" placeholder="https://... image, menu page, video, or webpage">
+      <div class="row"><div><label>Content type</label><select id="screenType"><option value="auto">Auto detect</option><option value="image">Image</option><option value="web">Web page / PDF</option><option value="video">Video</option></select></div><div><label>Image/video fit</label><select id="screenFit"><option value="contain">Contain</option><option value="cover">Cover</option><option value="fill">Fill</option></select></div></div>
+      <div class="actions"><button class="btn" id="saveBtn">Save screen</button><button class="btn secondary" id="clearBtn">Clear form</button></div><div id="formMsg" class="muted" style="margin-top:10px"></div>
+    </div>
+
+    <div id="screens" class="grid"></div>
+    <footer>VARDA TV • GitHub Pages front end + Firebase realtime control</footer>
+  </div>
+</div>
+<script type="module" src="admin.js"></script></body></html>
