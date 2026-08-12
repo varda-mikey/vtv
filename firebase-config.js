@@ -1,5 +1,5 @@
 export const firebaseConfig = {
-  apiKey: "AIzaSyCpE-CqABuDI2301syTBUD0cESJRwB8L_w",
+  apiKey: "AIzaSyDYj8r_5aM7egqucnsLWGgfLNeQL__BHaA",
   authDomain: "varda-tv.firebaseapp.com",
   databaseURL: "https://varda-tv-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "varda-tv",
