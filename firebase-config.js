@@ -1,11 +1,9 @@
-// Replace these values with your Firebase Web App configuration.
-// Firebase Console > Project settings > Your apps > Web app > SDK setup and configuration.
 export const firebaseConfig = {
-  apiKey: "PASTE_FIREBASE_API_KEY",
-  authDomain: "PASTE_PROJECT.firebaseapp.com",
-  databaseURL: "https://PASTE_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "PASTE_PROJECT",
-  storageBucket: "PASTE_PROJECT.appspot.com",
-  messagingSenderId: "PASTE_SENDER_ID",
-  appId: "PASTE_APP_ID"
+  apiKey: "AIzaSyCpE-CqABuDI2301syTBUD0cESJRwB8L_w",
+  authDomain: "varda-tv.firebaseapp.com",
+  databaseURL: "https://varda-tv-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "varda-tv",
+  storageBucket: "varda-tv.firebasestorage.app",
+  messagingSenderId: "64001679757",
+  appId: "1:64001679757:web:ea9828a61abd3f5639ddc4"
 };
