@@ -6,27 +6,22 @@
   var status = document.getElementById('status');
   var currentSignature = '';
   var pollTimer = null;
+  var slideTimer = null;
+  var slideIndex = 0;
+  var currentData = null;
 
-  function trimText(value) {
-    return String(value || '').replace(/^\s+|\s+$/g, '');
-  }
+  function trimText(value) { return String(value || '').replace(/^\s+|\s+$/g, ''); }
 
   function screenId() {
     var hash = location.hash || '';
     var search = location.search || '';
-    var match;
-
-    match = search.match(/[?&]id=([^&]+)/i);
+    var match = search.match(/[?&]id=([^&]+)/i);
     if (match && match[1]) {
       try { return trimText(decodeURIComponent(match[1])).toLowerCase(); }
       catch (e) { return trimText(match[1]).toLowerCase(); }
     }
-
     if (hash.length > 1) return trimText(hash.substring(1)).toLowerCase();
-
-    var parts = location.pathname.split('/');
-    var clean = [];
-    var i;
+    var parts = location.pathname.split('/'), clean = [], i;
     for (i = 0; i < parts.length; i++) if (parts[i]) clean.push(parts[i]);
     if (clean.length) {
       var last = clean[clean.length - 1].replace(/\.html$/i, '').toLowerCase();
@@ -35,18 +30,7 @@
     return '';
   }
 
-  function setStatus(text, kind) {
-    status.innerHTML = text;
-    status.className = kind || '';
-  }
-
-  function kindFrom(url, forced) {
-    if (forced && forced !== 'auto') return forced;
-    var clean = String(url || '').split('?')[0].toLowerCase();
-    if (/\.(png|jpg|jpeg|gif|svg|webp)$/.test(clean)) return 'image';
-    if (/\.(mp4|webm|ogg)$/.test(clean)) return 'video';
-    return 'web';
-  }
+  function setStatus(text, kind) { status.innerHTML = text; status.className = kind || ''; }
 
   function fitClass(fit) {
     fit = fit || 'contain';
@@ -54,62 +38,68 @@
     return 'fit-' + fit;
   }
 
+  function getSlides(data) {
+    var out = [], i, s;
+    if (data && data.slides && typeof data.slides.length !== 'undefined') {
+      for (i = 0; i < data.slides.length; i++) {
+        s = data.slides[i];
+        if (s && s.imageData) out.push(s);
+      }
+    }
+    if (!out.length && data && data.imageData) {
+      out.push({ imageData: data.imageData, imageName: data.imageName || 'Image', duration: data.slideSeconds || 10 });
+    }
+    return out;
+  }
+
   function signature(data) {
-    try { return JSON.stringify(data || {}); }
-    catch (e) { return String(new Date().getTime()); }
+    if (!data) return '';
+    return String(data.updatedAt || '') + '|' + String(data.name || '') + '|' + String(data.slideSeconds || '') + '|' + String(getSlides(data).length);
+  }
+
+  function clearSlideTimer() {
+    if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+  }
+
+  function showSlide(index) {
+    if (!currentData) return;
+    var slides = getSlides(currentData);
+    if (!slides.length) return;
+    if (index >= slides.length) index = 0;
+    slideIndex = index;
+    var slide = slides[index];
+    stage.innerHTML = '';
+    var img = document.createElement('img');
+    img.src = slide.imageData;
+    img.className = fitClass(currentData.fit);
+    stage.appendChild(img);
+    setStatus('LIVE - ' + (currentData.name || 'TV'), 'ok');
+    clearSlideTimer();
+    if (slides.length > 1) {
+      var sec = parseInt(slide.duration || currentData.slideSeconds || 10, 10);
+      if (!sec || sec < 2) sec = 2;
+      if (sec > 120) sec = 120;
+      slideTimer = setTimeout(function () { showSlide(slideIndex + 1); }, sec * 1000);
+    }
   }
 
   function render(data) {
-    if (!data || data.active === false || (!data.imageData && !data.url)) {
+    var slides = getSlides(data);
+    if (!data || data.active === false || !slides.length) {
       stage.innerHTML = '';
       currentSignature = '';
+      currentData = null;
+      clearSlideTimer();
       setStatus('This TV screen is not assigned yet.', 'error');
       return;
     }
-
     var sig = signature(data);
     if (sig === currentSignature) return;
     currentSignature = sig;
-    stage.innerHTML = '';
-
-    var el;
-    var type;
-
-    if (data.imageData) {
-      el = document.createElement('img');
-      el.src = data.imageData;
-      el.className = fitClass(data.fit);
-    } else {
-      type = kindFrom(data.url, data.type);
-      if (type === 'image') {
-        el = document.createElement('img');
-        el.src = data.url;
-        el.className = fitClass(data.fit);
-      } else if (type === 'video') {
-        el = document.createElement('video');
-        el.src = data.url;
-        el.autoplay = true;
-        el.loop = true;
-        el.muted = true;
-        el.setAttribute('autoplay', 'autoplay');
-        el.setAttribute('loop', 'loop');
-        el.setAttribute('muted', 'muted');
-        el.setAttribute('playsinline', 'playsinline');
-        el.className = fitClass(data.fit);
-        try { el.play(); } catch (e) {}
-      } else {
-        el = document.createElement('iframe');
-        el.src = data.url;
-        el.setAttribute('allow', 'autoplay; fullscreen');
-      }
-    }
-
-    stage.appendChild(el);
-    setStatus('LIVE - ' + (data.name || 'TV'), 'ok');
-
-    try {
-      localStorage.setItem('varda-tv-cache', JSON.stringify({ id: screenId(), data: data }));
-    } catch (e) {}
+    currentData = data;
+    slideIndex = 0;
+    showSlide(0);
+    try { localStorage.setItem('varda-tv-cache', JSON.stringify({ id: screenId(), data: data })); } catch (e) {}
   }
 
   function loadCache(id) {
@@ -126,34 +116,21 @@
     var url = DATABASE_URL + '/screens/' + encodeURIComponent(id) + '.json?_=' + new Date().getTime();
     xhr.open('GET', url, true);
     xhr.timeout = 15000;
-
     xhr.onreadystatechange = function () {
       if (xhr.readyState !== 4) return;
       if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          render(JSON.parse(xhr.responseText));
-        } catch (e) {
-          setStatus('TV data error. Retrying...', 'error');
-        }
-      } else if (xhr.status !== 0) {
-        setStatus('Connection error. Retrying...', 'error');
-      }
+        try { render(JSON.parse(xhr.responseText)); }
+        catch (e) { setStatus('TV data error. Retrying...', 'error'); }
+      } else if (xhr.status !== 0) setStatus('Connection error. Retrying...', 'error');
     };
-
     xhr.onerror = function () { setStatus('Connection error. Retrying...', 'error'); };
     xhr.ontimeout = function () { setStatus('Connection timeout. Retrying...', 'error'); };
-
-    try { xhr.send(null); }
-    catch (e) { setStatus('Connection error. Retrying...', 'error'); }
+    try { xhr.send(null); } catch (e) { setStatus('Connection error. Retrying...', 'error'); }
   }
 
   function start() {
     var id = screenId();
-    if (!id) {
-      setStatus('No screen ID. Use #1, ?id=1, or /1', 'error');
-      return;
-    }
-
+    if (!id) { setStatus('No screen ID. Use #1, ?id=1, or /1', 'error'); return; }
     setStatus('Connecting to screen ' + id + '...');
     loadCache(id);
     fetchScreen(id);
