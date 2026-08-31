@@ -10,21 +10,21 @@
 
 <div id="appView" class="hidden">
   <div class="shell">
-    <div class="topbar"><div class="brand"><div class="brandmark">V</div><div><h1>VARDA TV Display Control</h1><p>Single image or automatic slideshow per TV</p></div></div><button class="btn secondary" id="logoutBtn">Sign out</button></div>
-    <div class="notice"><strong>New:</strong> select 1 to 6 images for one TV. If you choose more than one, VARDA TV will rotate them automatically using the seconds you set below.</div>
+    <div class="topbar"><div class="brand"><div class="brandmark">V</div><div><h1>VARDA TV Display Control</h1><p>Images, slideshows and video displays per TV</p></div></div><button class="btn secondary" id="logoutBtn">Sign out</button></div>
+    <div class="notice"><strong>Media:</strong> upload 1 image, 2–6 images for a slideshow, or 1 video. Supported video formats: MP4, WebM and OGG.</div>
 
     <div class="card" style="margin-bottom:16px">
       <div class="screen-title">Add / update a TV screen</div>
       <div class="row"><div><label>Screen ID</label><input id="screenId" placeholder="1, 2, main, cafe"></div><div><label>Display name</label><input id="screenName" placeholder="Pirates Cafe TV 1"></div></div>
 
-      <label>Upload image(s)</label>
-      <input id="screenImage" type="file" multiple accept="image/jpeg,image/png,image/webp">
-      <div class="small muted" style="margin-top:8px">Choose 1 image for a fixed display, or 2–6 images for a slideshow. Images are optimized automatically for older TVs.</div>
+      <label>Upload image(s) or video</label>
+      <input id="screenImage" type="file" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/ogg">
+      <div class="small muted" style="margin-top:8px">Choose 1 image for a fixed display, 2–6 images for a slideshow, or 1 video for a video player. Videos are limited to 8 MB for the current Firebase setup.</div>
       <div id="previewWrap" class="hidden" style="margin-top:14px"><div id="imagePreview" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px"></div></div>
 
       <div class="row">
-        <div><label>Image fit</label><select id="screenFit"><option value="contain">Contain — show whole image</option><option value="cover">Cover — fill TV, may crop edges</option><option value="fill">Stretch — fill TV</option></select></div>
-        <div><label>Seconds per image</label><input id="slideSeconds" type="number" min="2" max="120" step="1" value="10"><div class="small muted" style="margin-top:6px">Example: 10 = change every 10 seconds.</div></div>
+        <div><label>Media fit</label><select id="screenFit"><option value="contain">Contain — show whole media</option><option value="cover">Cover — fill TV, may crop edges</option><option value="fill">Stretch — fill TV</option></select></div>
+        <div><label>Seconds per image</label><input id="slideSeconds" type="number" min="2" max="120" step="1" value="10"><div class="small muted" style="margin-top:6px">For image slideshows only.</div></div>
       </div>
 
       <div class="actions"><button class="btn" id="saveBtn">Upload & Save</button><button class="btn secondary" id="clearBtn">Clear form</button></div><div id="formMsg" class="muted" style="margin-top:10px"></div>
@@ -34,4 +34,4 @@
     <footer>VARDA TV • GitHub Pages + Firebase realtime control</footer>
   </div>
 </div>
-<script type="module" src="admin.js?v=3"></script></body></html>
+<script type="module" src="admin.js?v=4"></script></body></html>
