@@ -12,6 +12,7 @@ function base(){return location.origin + location.pathname.replace(/admin\.html$
 function shortUrl(id){return base().replace(/\/$/,'') + '/#' + id}
 function esc(s){return String(s??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]))}
 function secondsValue(){return Math.max(2,Math.min(120,parseInt($('slideSeconds').value||'10',10)||10))}
+function isVideo(s){return s && s.mediaType==='video' && s.videoData}
 
 function drawPreviews(){
   const wrap=$('previewWrap'), p=$('imagePreview');
@@ -20,7 +21,11 @@ function drawPreviews(){
   currentSlides.forEach((s,i)=>{
     const box=document.createElement('div');
     box.style.cssText='border:1px solid #e5e7eb;border-radius:12px;padding:8px;background:#fff';
-    box.innerHTML=`<img src="${s.imageData}" alt="Slide ${i+1}" style="width:100%;height:150px;object-fit:contain;background:#111;border-radius:8px;display:block"><div class="small muted" style="margin-top:6px">${i+1}. ${esc(s.imageName||'Image')}</div>`;
+    if(isVideo(s)){
+      box.innerHTML=`<video src="${s.videoData}" controls muted playsinline style="width:100%;height:150px;object-fit:contain;background:#111;border-radius:8px;display:block"></video><div class="small muted" style="margin-top:6px">${i+1}. ${esc(s.videoName||'Video')}</div>`;
+    }else{
+      box.innerHTML=`<img src="${s.imageData}" alt="Slide ${i+1}" style="width:100%;height:150px;object-fit:contain;background:#111;border-radius:8px;display:block"><div class="small muted" style="margin-top:6px">${i+1}. ${esc(s.imageName||'Image')}</div>`;
+    }
     p.appendChild(box);
   });
   wrap.classList.remove('hidden');
@@ -64,18 +69,37 @@ async function compressImage(file){
     w=Math.max(480,Math.round(w*.82));h=Math.max(480,Math.round(h*.82));
   }
   if(out.length>1500000) throw new Error(file.name+' is too large even after optimization.');
-  return {imageData:out,imageName:file.name};
+  return {mediaType:'image',imageData:out,imageName:file.name};
+}
+
+async function readVideo(file){
+  if(!file || !file.type.startsWith('video/')) throw new Error('Please choose an MP4, WebM or OGG video.');
+  if(file.size>8*1024*1024) throw new Error(file.name+' is larger than 8 MB. Please use a shorter/smaller video.');
+  const dataUrl=await new Promise((resolve,reject)=>{
+    const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=()=>reject(new Error('Could not read video.')); r.readAsDataURL(file);
+  });
+  return {mediaType:'video',videoData:dataUrl,videoName:file.name,videoMime:file.type};
 }
 
 $('screenImage').addEventListener('change',async e=>{
   const files=Array.from(e.target.files||[]);
   if(!files.length)return;
-  if(files.length>6){e.target.value='';return msg($('formMsg'),'Please select a maximum of 6 images per TV.');}
+  const videos=files.filter(f=>f.type.startsWith('video/'));
+  const images=files.filter(f=>f.type.startsWith('image/'));
+  if(videos.length && (videos.length!==1 || images.length)) {e.target.value='';return msg($('formMsg'),'Choose either 1 video OR 1–6 images, not both.');}
+  if(images.length>6){e.target.value='';return msg($('formMsg'),'Please select a maximum of 6 images per TV.');}
   try{
     currentSlides=[];
-    for(let i=0;i<files.length;i++){
-      msg($('formMsg'),`Preparing image ${i+1} of ${files.length}…`);
-      currentSlides.push(await compressImage(files[i]));
+    if(videos.length){
+      msg($('formMsg'),'Preparing video…');
+      currentSlides.push(await readVideo(videos[0]));
+      drawPreviews();
+      msg($('formMsg'),'Video ready. It will play automatically on the TV.');
+      return;
+    }
+    for(let i=0;i<images.length;i++){
+      msg($('formMsg'),`Preparing image ${i+1} of ${images.length}…`);
+      currentSlides.push(await compressImage(images[i]));
       drawPreviews();
     }
     msg($('formMsg'),currentSlides.length>1?`${currentSlides.length} images ready for slideshow.`:'Image ready.');
@@ -89,16 +113,19 @@ $('clearBtn').onclick=clear;
 $('saveBtn').onclick=async()=>{
   const id=cleanId($('screenId').value);
   if(!id) return msg($('formMsg'),'Screen ID is required. Example: 21');
-  if(!currentSlides.length) return msg($('formMsg'),'Please choose at least one image first.');
+  if(!currentSlides.length) return msg($('formMsg'),'Please choose at least one image or one video first.');
   const sec=secondsValue();
-  const slides=currentSlides.map(s=>({imageData:s.imageData,imageName:s.imageName,duration:sec}));
-  const d={id,name:$('screenName').value.trim()||('TV '+id),slides,slideSeconds:sec,type:'slideshow',fit:$('screenFit').value,active:true,updatedAt:Date.now()};
-  if(slides.length===1){d.imageData=slides[0].imageData;d.imageName=slides[0].imageName;d.type='image'}
+  const hasVideo=isVideo(currentSlides[0]);
+  if(hasVideo && currentSlides.length!==1) return msg($('formMsg'),'A video must be the only media for a TV.');
+  const slides=currentSlides.map(s=>hasVideo?s:({...s,duration:sec}));
+  const d={id,name:$('screenName').value.trim()||('TV '+id),slides,slideSeconds:sec,type:hasVideo?'video':'slideshow',fit:$('screenFit').value,active:true,updatedAt:Date.now()};
+  if(!hasVideo && slides.length===1){d.imageData=slides[0].imageData;d.imageName=slides[0].imageName;d.type='image'}
+  if(hasVideo){d.videoData=slides[0].videoData;d.videoName=slides[0].videoName;d.videoMime=slides[0].videoMime}
   try{
     $('saveBtn').disabled=true;
     msg($('formMsg'),'Saving to VARDA TV…');
     await set(ref(db,'screens/'+id),d);
-    msg($('formMsg'),slides.length>1?`Saved ${slides.length}-image slideshow. Changes every ${sec} seconds.`:`Saved. TV ${id} updates automatically.`);
+    msg($('formMsg'),hasVideo?'Video saved. TV will play it automatically.':slides.length>1?`Saved ${slides.length}-image slideshow. Changes every ${sec} seconds.`:`Saved. TV ${id} updates automatically.`);
     $('screenImage').value='';
   }catch(e){msg($('formMsg'),'Save failed: '+e.message)}
   finally{$('saveBtn').disabled=false}
@@ -109,8 +136,9 @@ let started=false;
 function start(){if(started)return;started=true;onValue(ref(db,'screens'),snap=>render(snap.val()||{}))}
 
 function slidesFrom(d){
+  if(d && d.type==='video' && d.videoData)return [{mediaType:'video',videoData:d.videoData,videoName:d.videoName||'Video'}];
   if(Array.isArray(d.slides)&&d.slides.length)return d.slides;
-  if(d.imageData)return [{imageData:d.imageData,imageName:d.imageName||'Uploaded menu',duration:d.slideSeconds||10}];
+  if(d.imageData)return [{mediaType:'image',imageData:d.imageData,imageName:d.imageName||'Uploaded menu',duration:d.slideSeconds||10}];
   return [];
 }
 
@@ -120,14 +148,16 @@ function render(data){
   if(!entries.length){screensEl.innerHTML='<div class="card muted">No screens yet. Add TV 1 above.</div>';return}
   for(const [id,d] of entries){
     const c=document.createElement('div');c.className='card';const s=shortUrl(id),slides=slidesFrom(d),first=slides[0];
-    const thumb=first?.imageData?`<img src="${first.imageData}" alt="${esc(d.name||id)}" style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:12px;margin:12px 0">`:'';
-    const slideInfo=slides.length>1?`${slides.length} images • ${d.slideSeconds||slides[0]?.duration||10}s each`:'1 image';
+    let thumb='';
+    if(first?.videoData) thumb=`<video src="${first.videoData}" muted playsinline controls style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:12px;margin:12px 0"></video>`;
+    else if(first?.imageData) thumb=`<img src="${first.imageData}" alt="${esc(d.name||id)}" style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:12px;margin:12px 0">`;
+    const slideInfo=d.type==='video'?'VIDEO • autoplay + loop':slides.length>1?`${slides.length} images • ${d.slideSeconds||slides[0]?.duration||10}s each`:'1 image';
     c.innerHTML=`<div class="screen-head"><div><div class="screen-title">${esc(d.name||id)}</div><div class="muted">ID: <span class="code">${esc(id)}</span></div></div><span class="pill">● LIVE</span></div>${thumb}<div class="small muted">${esc(slideInfo)}</div><div class="small muted" style="margin-top:8px">TV link: <span class="code">${esc(s)}</span></div><div class="actions"><button class="btn secondary" data-act="copy">Copy TV link</button><button class="btn secondary" data-act="replace">Edit display</button><button class="btn danger" data-act="delete">Delete</button></div>`;
     c.querySelector('[data-act="copy"]').onclick=async()=>{await navigator.clipboard.writeText(s);const b=c.querySelector('[data-act="copy"]');b.textContent='Copied';setTimeout(()=>b.textContent='Copy TV link',1200)};
     c.querySelector('[data-act="replace"]').onclick=()=>{
       $('screenId').value=id;$('screenName').value=d.name||'';$('screenFit').value=d.fit||'contain';$('slideSeconds').value=d.slideSeconds||slides[0]?.duration||10;
-      currentSlides=slides.map(x=>({imageData:x.imageData,imageName:x.imageName||'Uploaded menu'}));drawPreviews();
-      scrollTo({top:0,behavior:'smooth'});msg($('formMsg'),'Current display loaded. Choose new images if needed, or change seconds and Save.')
+      currentSlides=slides.map(x=>x.videoData?({mediaType:'video',videoData:x.videoData,videoName:x.videoName||'Video',videoMime:x.videoMime||'video/mp4'}):({mediaType:'image',imageData:x.imageData,imageName:x.imageName||'Uploaded menu'}));drawPreviews();
+      scrollTo({top:0,behavior:'smooth'});msg($('formMsg'),'Current display loaded. Choose new media if needed, or change seconds and Save.')
     };
     c.querySelector('[data-act="delete"]').onclick=async()=>{if(confirm('Delete screen '+id+'?'))await remove(ref(db,'screens/'+id))};
     screensEl.appendChild(c)
