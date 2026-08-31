@@ -9,6 +9,7 @@
   var slideTimer = null;
   var slideIndex = 0;
   var currentData = null;
+  var currentVideo = null;
 
   function trimText(value) { return String(value || '').replace(/^\s+|\s+$/g, ''); }
 
@@ -40,25 +41,40 @@
 
   function getSlides(data) {
     var out = [], i, s;
+    if (data && data.type === 'video' && data.videoData) {
+      out.push({ mediaType: 'video', videoData: data.videoData, videoName: data.videoName || 'Video' });
+      return out;
+    }
     if (data && data.slides && typeof data.slides.length !== 'undefined') {
       for (i = 0; i < data.slides.length; i++) {
         s = data.slides[i];
-        if (s && s.imageData) out.push(s);
+        if (s && (s.imageData || s.videoData)) out.push(s);
       }
     }
+    if (!out.length && data && data.videoData) {
+      out.push({ mediaType: 'video', videoData: data.videoData, videoName: data.videoName || 'Video' });
+    }
     if (!out.length && data && data.imageData) {
-      out.push({ imageData: data.imageData, imageName: data.imageName || 'Image', duration: data.slideSeconds || 10 });
+      out.push({ mediaType: 'image', imageData: data.imageData, imageName: data.imageName || 'Image', duration: data.slideSeconds || 10 });
     }
     return out;
   }
 
   function signature(data) {
     if (!data) return '';
-    return String(data.updatedAt || '') + '|' + String(data.name || '') + '|' + String(data.slideSeconds || '') + '|' + String(getSlides(data).length);
+    var first = getSlides(data)[0] || {};
+    return String(data.updatedAt || '') + '|' + String(data.name || '') + '|' + String(data.slideSeconds || '') + '|' + String(data.type || '') + '|' + String(getSlides(data).length) + '|' + String(first.videoName || first.imageName || '');
   }
 
   function clearSlideTimer() {
     if (slideTimer) { clearTimeout(slideTimer); slideTimer = null; }
+  }
+
+  function clearVideo() {
+    if (currentVideo) {
+      try { currentVideo.pause(); currentVideo.removeAttribute('src'); currentVideo.load(); } catch (e) {}
+      currentVideo = null;
+    }
   }
 
   function showSlide(index) {
@@ -69,9 +85,33 @@
     slideIndex = index;
     var slide = slides[index];
     stage.innerHTML = '';
+    clearVideo();
+
+    if (slide.videoData) {
+      var video = document.createElement('video');
+      video.src = slide.videoData;
+      video.className = fitClass(currentData.fit);
+      video.autoplay = true;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.controls = true;
+      video.preload = 'auto';
+      video.setAttribute('aria-label', slide.videoName || 'VARDA TV video');
+      stage.appendChild(video);
+      currentVideo = video;
+      setStatus('LIVE - ' + (currentData.name || 'TV') + ' • VIDEO', 'ok');
+      var playAttempt = video.play();
+      if (playAttempt && typeof playAttempt.catch === 'function') playAttempt.catch(function () {
+        setStatus('LIVE - ' + (currentData.name || 'TV') + ' • VIDEO • Press Play', 'ok');
+      });
+      return;
+    }
+
     var img = document.createElement('img');
     img.src = slide.imageData;
     img.className = fitClass(currentData.fit);
+    img.alt = slide.imageName || 'VARDA TV display';
     stage.appendChild(img);
     setStatus('LIVE - ' + (currentData.name || 'TV'), 'ok');
     clearSlideTimer();
@@ -90,6 +130,7 @@
       currentSignature = '';
       currentData = null;
       clearSlideTimer();
+      clearVideo();
       setStatus('This TV screen is not assigned yet.', 'error');
       return;
     }
