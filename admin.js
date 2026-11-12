@@ -14,15 +14,72 @@ function shortUrl(id){return base().replace(/\/$/,'') + '/#' + id}
 function esc(s){return String(s??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]))}
 function secondsValue(){return Math.max(2,Math.min(120,parseInt($('slideSeconds').value||'10',10)||10))}
 const AUDIO_LIMIT=2*1024*1024;
-function readAudio(file){
-  if(!file || !(/\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name) || /^audio\//.test(file.type))) throw new Error('Choose an MP3, M4A, WAV or OGG music file.');
-  if(file.size>AUDIO_LIMIT) throw new Error('Music file exceeds 2 MB. Compress your MP3 to a smaller file first.');
+const AUDIO_INPUT_LIMIT=20*1024*1024;
+function toDataUrl(blob){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=()=>resolve(reader.result);
-    reader.onerror=()=>reject(new Error('Could not read music file.'));
-    reader.readAsDataURL(file);
+    reader.onerror=()=>reject(new Error('Could not read audio.'));
+    reader.readAsDataURL(blob);
   });
+}
+async function encodeMp3(buffer,bitrate,progress){
+  if(!window.lamejs?.Mp3Encoder) throw new Error('Music compressor is not available. Check your connection and reload VTV Admin.');
+  const sampleRate=22050;
+  const offline=new OfflineAudioContext(1,Math.ceil(buffer.duration*sampleRate),sampleRate);
+  const source=offline.createBufferSource();
+  source.buffer=buffer;
+  source.connect(offline.destination);
+  source.start();
+  progress('Preparing audio…');
+  const mono=(await offline.startRendering()).getChannelData(0);
+  const encoder=new window.lamejs.Mp3Encoder(1,sampleRate,bitrate);
+  const blocks=[];
+  const CHUNK=1152;
+  for(let i=0;i<mono.length;i+=CHUNK){
+    const end=Math.min(mono.length,i+CHUNK);
+    const pcm=new Int16Array(end-i);
+    for(let j=i;j<end;j++){
+      const n=Math.max(-1,Math.min(1,mono[j]));
+      pcm[j-i]=n<0?n*32768:n*32767;
+    }
+    const encoded=encoder.encodeBuffer(pcm);
+    if(encoded.length)blocks.push(new Uint8Array(encoded));
+    if(i%(CHUNK*120)===0){
+      progress('Compressing music… '+Math.min(99,Math.round(i/mono.length*100))+'%');
+      await new Promise(resolve=>setTimeout(resolve,0));
+    }
+  }
+  const last=encoder.flush();
+  if(last.length)blocks.push(new Uint8Array(last));
+  return new Blob(blocks,{type:'audio/mpeg'});
+}
+async function readAudio(file,progress=()=>{}){
+  if(!file || !(/\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name) || /^audio\//.test(file.type))) throw new Error('Choose an MP3, M4A, WAV or OGG music file.');
+  if(file.size>AUDIO_INPUT_LIMIT) throw new Error('Music file is larger than the 20 MB input limit.');
+  if(file.size<=AUDIO_LIMIT){
+    progress('Music is already under 2 MB; no compression needed.');
+    return {data:await toDataUrl(file),name:file.name};
+  }
+  progress('Opening music for automatic compression…');
+  const context=new (window.AudioContext||window.webkitAudioContext)();
+  let decoded;
+  try{
+    decoded=await context.decodeAudioData(await file.arrayBuffer());
+  }catch(e){
+    throw new Error('Your browser cannot decode this audio file. Try MP3 or WAV.');
+  }finally{await context.close().catch(()=>{});}
+  if(!decoded.duration || decoded.duration>15*60) throw new Error('Music longer than 15 minutes cannot be compressed here.');
+  for(const bitrate of [48,32,24]){
+    progress('Compressing to MP3 at '+bitrate+' kbps…');
+    const mp3=await encodeMp3(decoded,bitrate,progress);
+    // Base64 adds 33% overhead; budget for a little metadata overhead.
+    if(mp3.size<=AUDIO_LIMIT){
+      progress('Compressed '+(file.size/1048576).toFixed(1)+' MB to '+(mp3.size/1048576).toFixed(2)+' MB MP3.');
+      return {data:await toDataUrl(mp3),name:file.name.replace(/\.[^.]+$/,'')+'-vtv.mp3'};
+    }
+  }
+  throw new Error('This music is too long to fit the 2 MB limit, even at lower quality. Please use a shorter track.');
 }
 function isVideo(s){return s && s.mediaType==='video' && s.videoData}
 
@@ -172,7 +229,7 @@ function render(data){
     c.innerHTML=`<div class="screen-head"><div><div class="screen-title">${esc(d.name||id)}</div><div class="muted">ID: <span class="code">${esc(id)}</span></div></div><span class="pill">● LIVE</span></div>${thumb}<div class="small muted">${esc(slideInfo)}</div><div class="small muted" style="margin-top:8px">TV link: <span class="code">${esc(s)}</span></div><div class="card" style="margin-top:12px;padding:12px;background:#f8fafc">
       <div style="font-weight:800;margin-bottom:6px">♫ Background music</div>
       <div class="small muted" data-audio-status>${d.audioData ? 'Music: '+esc(d.audioName||'Uploaded track') : 'No music assigned'} </div>
-      <label>Upload music (MP3/M4A/WAV/OGG, max 2 MB)</label><input type="file" accept=".mp3,.m4a,.wav,.ogg,.aac,audio/*" data-audio-file>
+      <label>Upload music (MP3/M4A/WAV/OGG, up to 20 MB; auto-compressed if needed)</label><input type="file" accept=".mp3,.m4a,.wav,.ogg,.aac,audio/*" data-audio-file>
       <div class="row" style="margin-top:8px"><div><label>Volume: <span data-volume-label>${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}%</span></label><input data-audio-volume type="range" min="0" max="100" value="${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}"></div>
       <div><label>Playback</label><select data-audio-enable><option value="true" ${d.audioEnabled!==false?'selected':''}>On — loop continuously</option><option value="false" ${d.audioEnabled===false?'selected':''}>Off — mute</option></select></div></div>
       <div class="actions"><button class="btn secondary" data-act="saveaudio">Save music settings</button><button class="btn secondary" data-act="removeaudio">Remove music</button></div>
@@ -186,7 +243,7 @@ function render(data){
       try {
         b.disabled=true;note.textContent='Saving music settings…';
         const settings={audioVolume:Number(slider.value),audioEnabled:c.querySelector('[data-audio-enable]').value==='true',updatedAt:Date.now()};
-        if(file){settings.audioData=await readAudio(file);settings.audioName=file.name;}
+        if(file){const result=await readAudio(file,t=>note.textContent=t);settings.audioData=result.data;settings.audioName=result.name;}
         await update(ref(db,'screens/'+id),settings);
         note.textContent='Saved! TV will refresh automatically. If sound is blocked, tap Start Music on the TV.';
         c.querySelector('[data-audio-file]').value='';
