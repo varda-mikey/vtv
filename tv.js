@@ -10,6 +10,29 @@
   var slideIndex = 0;
   var currentData = null;
   var currentVideo = null;
+  var music = new Audio();
+  music.loop=true;
+  music.preload='auto';
+  var currentAudioSrc='';
+  var soundButton=document.createElement('button');
+  soundButton.textContent='♫ Start Music';
+  soundButton.setAttribute('aria-label','Start background music');
+  soundButton.style.cssText='position:fixed;right:18px;bottom:18px;z-index:30;border:1px solid #fff6;border-radius:12px;background:#171717e8;color:white;font:700 15px Arial;padding:13px 17px;cursor:pointer;display:none';
+  document.body.appendChild(soundButton);
+  soundButton.onclick=function(){music.play().then(function(){soundButton.style.display='none'}).catch(function(){soundButton.style.display='block'})};
+  function syncAudio(data){
+    var src=data && data.audioEnabled!==false ? (data.audioData||'') : '';
+    if(!src){
+      music.pause();music.removeAttribute('src');currentAudioSrc='';soundButton.style.display='none';return;
+    }
+    music.volume=Math.max(0,Math.min(1,(Number(data.audioVolume==null?25:data.audioVolume)||0)/100));
+    if(src!==currentAudioSrc){
+      currentAudioSrc=src;music.src=src;music.load();
+      music.play().then(function(){soundButton.style.display='none'}).catch(function(){soundButton.style.display='block'});
+    }else if(music.paused){
+      music.play().then(function(){soundButton.style.display='none'}).catch(function(){soundButton.style.display='block'});
+    }
+  }
 
   function trimText(value) { return String(value || '').replace(/^\s+|\s+$/g, ''); }
 
@@ -131,16 +154,18 @@
       currentData = null;
       clearSlideTimer();
       clearVideo();
+      syncAudio(null);
       setStatus('This TV screen is not assigned yet.', 'error');
       return;
     }
     var sig = signature(data);
-    if (sig === currentSignature) return;
+    if (sig === currentSignature) { syncAudio(data); return; }
     currentSignature = sig;
     currentData = data;
     slideIndex = 0;
     showSlide(0);
-    try { localStorage.setItem('varda-tv-cache', JSON.stringify({ id: screenId(), data: data })); } catch (e) {}
+    syncAudio(data);
+    try { localStorage.setItem('varda-tv-cache', JSON.stringify({ id: screenId(), data: Object.assign({},data,{audioData:null}) })); } catch (e) {}
   }
 
   function loadCache(id) {
