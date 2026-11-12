@@ -1,10 +1,11 @@
 import { db, auth } from './firebase-client.js';
-import { ref, onValue, set, remove } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js';
+import { ref, onValue, set, update, remove } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js';
 
 const $=id=>document.getElementById(id);
 const loginView=$('loginView'), appView=$('appView'), screensEl=$('screens');
 let currentSlides=[];
+let screenData={};
 
 function msg(el,t){el.textContent=t||''}
 function cleanId(v){return v.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'')}
@@ -12,6 +13,17 @@ function base(){return location.origin + location.pathname.replace(/admin\.html$
 function shortUrl(id){return base().replace(/\/$/,'') + '/#' + id}
 function esc(s){return String(s??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]))}
 function secondsValue(){return Math.max(2,Math.min(120,parseInt($('slideSeconds').value||'10',10)||10))}
+const AUDIO_LIMIT=2*1024*1024;
+function readAudio(file){
+  if(!file || !(/\.(mp3|m4a|wav|ogg|aac)$/i.test(file.name) || /^audio\//.test(file.type))) throw new Error('Choose an MP3, M4A, WAV or OGG music file.');
+  if(file.size>AUDIO_LIMIT) throw new Error('Music file exceeds 2 MB. Compress your MP3 to a smaller file first.');
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error('Could not read music file.'));
+    reader.readAsDataURL(file);
+  });
+}
 function isVideo(s){return s && s.mediaType==='video' && s.videoData}
 
 function drawPreviews(){
@@ -121,6 +133,10 @@ $('saveBtn').onclick=async()=>{
   const d={id,name:$('screenName').value.trim()||('TV '+id),slides,slideSeconds:sec,type:hasVideo?'video':'slideshow',fit:$('screenFit').value,active:true,updatedAt:Date.now()};
   if(!hasVideo && slides.length===1){d.imageData=slides[0].imageData;d.imageName=slides[0].imageName;d.type='image'}
   if(hasVideo){d.videoData=slides[0].videoData;d.videoName=slides[0].videoName;d.videoMime=slides[0].videoMime}
+  const existing=screenData[id]||{};
+  if(existing.audioData){d.audioData=existing.audioData;d.audioName=existing.audioName||'Music';}
+  d.audioEnabled=existing.audioEnabled!==false;
+  d.audioVolume=Number.isFinite(+existing.audioVolume)?+existing.audioVolume:25;
   try{
     $('saveBtn').disabled=true;
     msg($('formMsg'),'Saving to VARDA TV…');
@@ -143,6 +159,7 @@ function slidesFrom(d){
 }
 
 function render(data){
+  screenData=data;
   screensEl.innerHTML='';
   const entries=Object.entries(data).sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
   if(!entries.length){screensEl.innerHTML='<div class="card muted">No screens yet. Add TV 1 above.</div>';return}
@@ -152,7 +169,35 @@ function render(data){
     if(first?.videoData) thumb=`<video src="${first.videoData}" muted playsinline controls style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:12px;margin:12px 0"></video>`;
     else if(first?.imageData) thumb=`<img src="${first.imageData}" alt="${esc(d.name||id)}" style="width:100%;max-height:220px;object-fit:contain;background:#111;border-radius:12px;margin:12px 0">`;
     const slideInfo=d.type==='video'?'VIDEO • autoplay + loop':slides.length>1?`${slides.length} images • ${d.slideSeconds||slides[0]?.duration||10}s each`:'1 image';
-    c.innerHTML=`<div class="screen-head"><div><div class="screen-title">${esc(d.name||id)}</div><div class="muted">ID: <span class="code">${esc(id)}</span></div></div><span class="pill">● LIVE</span></div>${thumb}<div class="small muted">${esc(slideInfo)}</div><div class="small muted" style="margin-top:8px">TV link: <span class="code">${esc(s)}</span></div><div class="actions"><button class="btn secondary" data-act="copy">Copy TV link</button><button class="btn secondary" data-act="replace">Edit display</button><button class="btn danger" data-act="delete">Delete</button></div>`;
+    c.innerHTML=`<div class="screen-head"><div><div class="screen-title">${esc(d.name||id)}</div><div class="muted">ID: <span class="code">${esc(id)}</span></div></div><span class="pill">● LIVE</span></div>${thumb}<div class="small muted">${esc(slideInfo)}</div><div class="small muted" style="margin-top:8px">TV link: <span class="code">${esc(s)}</span></div><div class="card" style="margin-top:12px;padding:12px;background:#f8fafc">
+      <div style="font-weight:800;margin-bottom:6px">♫ Background music</div>
+      <div class="small muted" data-audio-status>${d.audioData ? 'Music: '+esc(d.audioName||'Uploaded track') : 'No music assigned'} </div>
+      <label>Upload music (MP3/M4A/WAV/OGG, max 2 MB)</label><input type="file" accept=".mp3,.m4a,.wav,.ogg,.aac,audio/*" data-audio-file>
+      <div class="row" style="margin-top:8px"><div><label>Volume: <span data-volume-label>${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}%</span></label><input data-audio-volume type="range" min="0" max="100" value="${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}"></div>
+      <div><label>Playback</label><select data-audio-enable><option value="true" ${d.audioEnabled!==false?'selected':''}>On — loop continuously</option><option value="false" ${d.audioEnabled===false?'selected':''}>Off — mute</option></select></div></div>
+      <div class="actions"><button class="btn secondary" data-act="saveaudio">Save music settings</button><button class="btn secondary" data-act="removeaudio">Remove music</button></div>
+      <div class="small muted" data-audio-msg style="margin-top:6px">Menu images and videos are not changed by music settings.</div>
+    </div><div class="actions"><button class="btn secondary" data-act="copy">Copy TV link</button><button class="btn secondary" data-act="replace">Edit display</button><button class="btn danger" data-act="delete">Delete</button></div>`;
+    const slider=c.querySelector('[data-audio-volume]');
+    slider.oninput=()=>c.querySelector('[data-volume-label]').textContent=slider.value+'%';
+    c.querySelector('[data-act="saveaudio"]').onclick=async()=>{
+      const file=c.querySelector('[data-audio-file]').files[0];
+      const b=c.querySelector('[data-act="saveaudio"]'), note=c.querySelector('[data-audio-msg]');
+      try {
+        b.disabled=true;note.textContent='Saving music settings…';
+        const settings={audioVolume:Number(slider.value),audioEnabled:c.querySelector('[data-audio-enable]').value==='true',updatedAt:Date.now()};
+        if(file){settings.audioData=await readAudio(file);settings.audioName=file.name;}
+        await update(ref(db,'screens/'+id),settings);
+        note.textContent='Saved! TV will refresh automatically. If sound is blocked, tap Start Music on the TV.';
+        c.querySelector('[data-audio-file]').value='';
+      }catch(e){note.textContent='Music save failed: '+e.message}finally{b.disabled=false}
+    };
+    c.querySelector('[data-act="removeaudio"]').onclick=async()=>{
+      if(!confirm('Remove music from TV '+id+'? The menu will remain.'))return;
+      const note=c.querySelector('[data-audio-msg]');
+      try{await update(ref(db,'screens/'+id),{audioData:null,audioName:null,audioEnabled:false,updatedAt:Date.now()});note.textContent='Music removed; menu unchanged.'}
+      catch(e){note.textContent='Could not remove music: '+e.message}
+    };
     c.querySelector('[data-act="copy"]').onclick=async()=>{await navigator.clipboard.writeText(s);const b=c.querySelector('[data-act="copy"]');b.textContent='Copied';setTimeout(()=>b.textContent='Copy TV link',1200)};
     c.querySelector('[data-act="replace"]').onclick=()=>{
       $('screenId').value=id;$('screenName').value=d.name||'';$('screenFit').value=d.fit||'contain';$('slideSeconds').value=d.slideSeconds||slides[0]?.duration||10;
