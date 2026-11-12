@@ -228,13 +228,31 @@ function render(data){
     const slideInfo=d.type==='video'?'VIDEO • autoplay + loop':slides.length>1?`${slides.length} images • ${d.slideSeconds||slides[0]?.duration||10}s each`:'1 image';
     c.innerHTML=`<div class="screen-head"><div><div class="screen-title">${esc(d.name||id)}</div><div class="muted">ID: <span class="code">${esc(id)}</span></div></div><span class="pill">● LIVE</span></div>${thumb}<div class="small muted">${esc(slideInfo)}</div><div class="small muted" style="margin-top:8px">TV link: <span class="code">${esc(s)}</span></div><div class="card" style="margin-top:12px;padding:12px;background:#f8fafc">
       <div style="font-weight:800;margin-bottom:6px">♫ Background music</div>
-      <div class="small muted" data-audio-status>${d.audioData ? 'Music: '+esc(d.audioName||'Uploaded track') : 'No music assigned'} </div>
+      <div data-audio-status style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px">
+        <span class="pill" style="${d.audioData && d.audioEnabled!==false?'':'background:#f3f4f6;color:#4b5563'}">${d.audioData?(d.audioEnabled===false?'● MUSIC OFF':'● MUSIC SAVED · ON'):'○ NO MUSIC'}</span>
+        <span class="small muted">This reports saved settings, not confirmed TV speaker playback.</span>
+      </div>
+      <div style="font-weight:800;overflow-wrap:anywhere" data-audio-title>${d.audioData?'🎵 '+esc(d.audioName||'Uploaded track'):'No track uploaded yet'}</div>
+      ${d.audioData?'<audio controls preload="none" data-audio-preview style="width:100%;margin-top:8px;display:block"></audio><div class="small muted">▶ Test the uploaded music here in Admin. If you hear it, the file is playable on this device.</div>':''}
+      <div class="small muted" style="margin-top:8px">Loop: ${d.audioData?'On · repeats continuously':'—'} · Volume: ${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}% · Last saved: ${d.updatedAt?new Date(d.updatedAt).toLocaleString():'Unknown'}</div>
       <label>Upload music (MP3/M4A/WAV/OGG, up to 20 MB; auto-compressed if needed)</label><input type="file" accept=".mp3,.m4a,.wav,.ogg,.aac,audio/*" data-audio-file>
       <div class="row" style="margin-top:8px"><div><label>Volume: <span data-volume-label>${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}%</span></label><input data-audio-volume type="range" min="0" max="100" value="${Number.isFinite(+d.audioVolume)?Math.round(+d.audioVolume):25}"></div>
       <div><label>Playback</label><select data-audio-enable><option value="true" ${d.audioEnabled!==false?'selected':''}>On — loop continuously</option><option value="false" ${d.audioEnabled===false?'selected':''}>Off — mute</option></select></div></div>
       <div class="actions"><button class="btn secondary" data-act="saveaudio">Save music settings</button><button class="btn secondary" data-act="removeaudio">Remove music</button></div>
       <div class="small muted" data-audio-msg style="margin-top:6px">Menu images and videos are not changed by music settings.</div>
     </div><div class="actions"><button class="btn secondary" data-act="copy">Copy TV link</button><button class="btn secondary" data-act="replace">Edit display</button><button class="btn danger" data-act="delete">Delete</button></div>`;
+    const preview=c.querySelector('[data-audio-preview]');
+    if(preview){
+      // Load audio only for the selected screen, so dashboards with many TVs stay responsive.
+      preview.addEventListener('click',()=>{if(!preview.getAttribute('src'))preview.src=d.audioData});
+      preview.addEventListener('play',()=>{
+        document.querySelectorAll('[data-audio-preview]').forEach(other=>{if(other!==preview)other.pause()});
+        if(!preview.src || preview.src===location.href)preview.src=d.audioData;
+      });
+      preview.addEventListener('pointerdown',()=>{if(!preview.getAttribute('src'))preview.src=d.audioData},{once:true});
+      preview.addEventListener('focus',()=>{if(!preview.getAttribute('src'))preview.src=d.audioData},{once:true});
+      preview.addEventListener('error',()=>{c.querySelector('[data-audio-msg]').textContent='Preview could not play this file on this browser.'});
+    }
     const slider=c.querySelector('[data-audio-volume]');
     slider.oninput=()=>c.querySelector('[data-volume-label]').textContent=slider.value+'%';
     c.querySelector('[data-act="saveaudio"]').onclick=async()=>{
